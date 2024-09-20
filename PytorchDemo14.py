@@ -1,5 +1,6 @@
 #卷积残差模块算子融合
 import torch
+import time
 import os
 import numpy as np
 from mpmath import eps
@@ -62,4 +63,69 @@ print(conv_layer.weight)#得到权重
 #权重的维度与输出通道的数量一致，即（输出通道*输入通道*卷积核大小）
 #conv_layer.bias.size()=输出通道大小
 
+#每个通道都会有两套3*3的矩阵（因为输入有两个通道），对输入的两个通道进行滑动卷积，然后将两个输入通道的滑动卷积结果相加再加bias，就得到结果
+#point-wise convolution一般是1*1的一个卷积，打破了卷积的假设（局部关联性和平移不变性（旋转图片会得到一样的值））不考虑局部关联性，只考虑自身
+#deep-wise convolution一般都是3*3的卷积，将groups设置为大于1的数，即把卷积分成几部分，可以降低计算量
 
+#conv_residual_block_fusion
+
+#公式：res_block = 3*3 conv + 1*1 conv +input
+in_channels = 2
+ou_channels = 2
+kernel_size = 3
+w = 9
+h = 9
+
+t0 = time.time()
+#原生写法
+#一般卷积输入的向量维度为（batch_size*in_channels*width*height）
+x = torch.ones(1, in_channels, w, h) #输入张量大小
+conv_2d = nn.Conv2d(in_channels, ou_channels, kernel_size, padding="same")
+conv_2d_pointwise = nn.Conv2d(in_channels, ou_channels, 1)
+result_1 = conv_2d(x) + conv_2d_pointwise(x) + x #原生写法的输出
+print(result_1)
+
+t1 = time.time()
+#算子融合写法
+#把point_wise卷积和x本身都写成3*3的卷积
+#最终把三个卷积都写成一个卷积
+#F.pad() 是pytorch 内置的 tensor 扩充函数，便于对数据集图像或中间层特征进行维度扩充
+
+#把pointwise卷积写成3*3的卷积，但是依然不关联相邻点关联性和通道关联性
+
+#Step1 改造
+pointwise_to_conv_weight = F.pad(conv_2d_pointwise.weight, (1, 1, 1, 1, 0, 0, 0, 0))#在上面一行，下面一行，左边一列，右边一列都填充0，即把2*2*1*1->2*2*3*3
+conv_2d_for_pointwise = nn.Conv2d(in_channels, ou_channels, kernel_size, padding="same")
+conv_2d_for_pointwise.weight = torch.nn.Parameter(pointwise_to_conv_weight) #修改weight
+conv_2d_for_pointwise.bias = torch.nn.Parameter(conv_2d_pointwise.bias)  #修改bias
+
+#把x本身也写成3*3的卷积
+zeros = torch.unsqueeze(torch.zeros(kernel_size, kernel_size), 0) #构建全0矩阵,增加维度为3维
+stars = torch.unsqueeze(F.pad(torch.ones(1, 1), [1, 1, 1, 1]), 0) #构建全1矩阵，填充1，增加维度为3维
+stars_zeros = torch.unsqueeze(torch.cat([stars, zeros], dim=0), 0) #第一个输出通道的卷积核,是一个4维的张量
+zeros_stars = torch.unsqueeze(torch.cat([zeros, stars], dim=0), 0) #第二个输出通道的卷积核,是一个4维的张量
+identity_conv_weight = torch.cat([stars_zeros, zeros_stars], dim=0) #把两个卷积核拼接成一个4维张量
+identity_conv_bias = torch.zeros([ou_channels]) #设置bias为0
+conv_2d_for_identity = nn.Conv2d(in_channels, ou_channels, kernel_size, padding="same")
+conv_2d_for_identity.weight = torch.nn.Parameter(identity_conv_weight)
+conv_2d_for_identity.bias = torch.nn.Parameter(identity_conv_bias)
+
+result_2 = conv_2d(x) + conv_2d_pointwise(x) + conv_2d_for_identity(x)
+
+print(result_2)
+
+print(torch.all(torch.isclose(result_1, result_2))) #判断两个张量是否相同
+
+#Step2 融合
+conv_2d_for_fusion = nn.Conv2d(in_channels, ou_channels, kernel_size, padding="same")
+conv_2d_for_fusion.weight = torch.nn.Parameter(conv_2d.weight.data + conv_2d_for_pointwise.weight.data + conv_2d_for_identity.weight.data) #构成融合卷积的weight
+conv_2d_for_fusion.bias = torch.nn.Parameter(conv_2d.bias.data + conv_2d_for_pointwise.bias.data + conv_2d_for_identity.bias.data) #构成融合卷积的bias
+result_3 = conv_2d_for_fusion(x) #融合卷积的输出
+
+print(torch.all(torch.isclose(result_3, result_2))) #判断融合卷积和上面两个卷积的输出是否相同
+
+t2 = time.time()
+
+print("原生写法耗时", t1 - t0)
+print("融合写法耗时", t2 -t1)
+#算子融合可以使三个卷积合并成一个卷积
