@@ -11,7 +11,7 @@ It includes implementations of various algorithms and their applications to diff
    
 2. Navigate to the repository directory:
    ```bash
-   cd your-repo-name
+   cd MachLearn
    
 ## Contributing
 If you have any suggestions for improvement or would like to add new algorithms, please submit a Pull Request.  
