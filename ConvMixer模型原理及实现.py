@@ -32,7 +32,7 @@ def ConvMixer(h, depth, kernel_size=9, patch_size=7, n_classes=1000):
                *[Seq(Residual(ActBn(nn.Conv2d(h, h, kernel_size, groups=h, padding="same"))), #*可以解包将循环中的元素作为单独的参数传递给函数和类，实现depth_wise层
                 ActBn(nn.Conv2d(h, h, 1)))for i in range(depth)], #实现point_wise层
                nn.AdaptiveAvgPool2d((1, 1)), nn.Flatten(), nn.Linear(h, n_classes)) #自适应平均值，展平，最后映射到n_class的维度，得到分类
-#逆天写法，可读性极差
+
 
 #常规卷积
 conv_general = nn.Conv2d(3,3,3,padding="same")

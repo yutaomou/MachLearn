@@ -69,6 +69,7 @@ print(conv_layer.weight)#得到权重
 
 #conv_residual_block_fusion
 
+#对于res_block模型
 #公式：res_block = 3*3 conv + 1*1 conv +input
 in_channels = 2
 ou_channels = 2
