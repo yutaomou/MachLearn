@@ -51,6 +51,7 @@ src_embedding = src_embedding_table(src_seq) #每一个输入句子的编码
 tgt_embedding = tgt_embedding_table(tgt_seq) #对实例后面直接加括号即调用forward方法
 
 ##构建position embedding(位置编码)
+#使用sin/cos来表示位置编码可以增强编码的泛化能力，比如当序列超过最大序列长度时，可以通过线性组合来得到位置编码
 #构建时即可以用循环一个个填充，也可以直接矩阵相乘
 #分为奇数列和偶数列，偶数列的编码为sin，奇数列的编码为cos
 #formula：sin/cos(pos * 10000 ^ (2i / d_model))
